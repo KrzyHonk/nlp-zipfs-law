@@ -6,7 +6,7 @@ import logging
 import sys
 import unittest
 
-from zipfs_law import parse_epub
+from zipfs_law import zipfs_law_analysis
 
 
 class ZipfsLawTests(unittest.TestCase):
@@ -18,7 +18,7 @@ class ZipfsLawTests(unittest.TestCase):
         """
         Test using Hitchhiker Guide
         """
-        parse_epub.zipfs_law_analysis('hitchhiker.epub')
+        zipfs_law_analysis.zipfs_law_analysis('hitchhiker')
 
         log = logging.getLogger("ZipfsLawTests.test_zipfs_law_hitchhiker")
 
