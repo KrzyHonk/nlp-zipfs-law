@@ -2,9 +2,11 @@
 """
 Tests for Zipfs Law analysis
 """
+import logging
+import sys
 import unittest
 
-import parse_epub
+from zipfs_law import parse_epub
 
 
 class ZipfsLawTests(unittest.TestCase):
@@ -18,6 +20,10 @@ class ZipfsLawTests(unittest.TestCase):
         """
         parse_epub.zipfs_law_analysis('hitchhiker.epub')
 
+        log = logging.getLogger("ZipfsLawTests.test_zipfs_law_hitchhiker")
+
 
 if __name__ == '__main__':
+    logging.basicConfig(stream=sys.stderr)
+    logging.getLogger("SomeTest.testSomething").setLevel(logging.DEBUG)
     unittest.main()
