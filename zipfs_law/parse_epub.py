@@ -82,34 +82,51 @@ def extract_word_triplets(doc: Doc) -> List:
 
 
 def get_words_count_rank(words_count):
-    words_count_rank = stats.rankdata([c for (w, c) in words_count])
+    words_count_rank = stats.rankdata([count for (word, count) in words_count])
     return words_count_rank
 
 
-def get_pairs_count_rank(words_count):
-    words_count_rank = stats.rankdata([c for (w, c) in words_count])
-    return words_count_rank
+def get_pairs_count_rank(pairs_count):
+    pair_count_rank = stats.rankdata([count for (pair, count) in pairs_count])
+    return pair_count_rank
 
 
-def get_triplets_count_rank(words_count):
-    words_count_rank = stats.rankdata([c for (w, c) in words_count])
-    return words_count_rank
+def get_triplets_count_rank(triplets_count):
+    triplets_count_rank = stats.rankdata([count for (triple, count) in triplets_count])
+    return triplets_count_rank
+
 
 def generate_plots(amb, amb_c_rank):
     numpy.corrcoef(amb_c_rank, [numpy.math.log(c) for (w, c) in amb])
     rev = [len(amb_c_rank) - r + 1 for r in amb_c_rank]
 
     plt.plot([numpy.math.log(c) for c in rev], [numpy.math.log(c) for (w, c) in amb], 'ro')
+    #plt.ion()
     plt.show()
+    plt.pause(0.001)
 
 
-def print_most_fifty(words_count):
-    for (w, c) in words_count:
-        print((w, c))
+def get_top_range(ranked_data, limit=50):
+    sorted_data = sorted(ranked_data, key=lambda count: count)
+    return sorted_data[0:limit]
 
 
 def zipfs_law_analysis(epub_title: str):
     words_count, pairs_count, triplets_count = get_word_pair_triple_count(epub_title)
-    amb_c_rank = get_words_count_rank(words_count)
-    generate_plots(words_count, amb_c_rank)
-    # print_most_fifty(word_count)
+
+    words_ranked_data = get_words_count_rank(words_count)
+    pairs_ranked_data = get_pairs_count_rank(pairs_count)
+    triplets_ranked_data = get_triplets_count_rank(triplets_count)
+
+    generate_plots(words_count, words_ranked_data)
+    generate_plots(pairs_count, pairs_ranked_data)
+    generate_plots(triplets_count, triplets_ranked_data)
+
+    words_data = zip(words_count, words_ranked_data)
+    words_most_common = get_top_range(words_data)
+
+    pairs_data = zip(pairs_count, pairs_ranked_data)
+    pairs_most_common = get_top_range(pairs_data)
+
+    triplets_data = zip(triplets_count, triplets_ranked_data)
+    triplets_most_common = get_top_range(triplets_data)
