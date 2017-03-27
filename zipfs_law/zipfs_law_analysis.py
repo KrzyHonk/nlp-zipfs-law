@@ -69,7 +69,7 @@ def __get_word_pair_triple_count(epub_title: str):
     pairs_list = []
     triplets_list = []
     for document in book.get_items_of_type(9):
-        content = document.get_content().decode("utf-8")
+        content = document.get_content().decode("utf-8").replace('"', ' ')
         tag_re = re.compile(r'(<!--.*?-->|<[^>]*>)')
 
         # Remove HTML tgs
