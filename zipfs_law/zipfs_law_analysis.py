@@ -25,7 +25,7 @@ def zipfs_law_analysis(epub_title: str, directory: str = ""):
     }
 
     output_directory = "./output/" + directory + epub_title + "/"
-    output_filename = epub_title
+    output_filename = epub_title + ".json"
 
     try:
         os.makedirs(output_directory)
@@ -39,7 +39,7 @@ def zipfs_law_analysis(epub_title: str, directory: str = ""):
 
 
 def __get_word_pair_triple_count(epub_title: str, directory: str = ""):
-    regex = re.compile('[a-zA-z0-9\-\']+')
+    regex = re.compile('[a-zA-z0-9\-\'`]+')
     book = epub.read_epub(directory + epub_title + ".epub")
     words_list = []
     pairs_list = []
@@ -98,7 +98,7 @@ def __get_word_pair_triple_count(epub_title: str, directory: str = ""):
                     threads.append(thread)
                 else:
                     arg = tmp_word_list[index:split]
-                    thread = PairsThread(arg, work_queue)
+                    thread = TripletsThread(arg, work_queue)
                     thread.start()
                     threads.append(thread)
                     index = split
