@@ -18,12 +18,8 @@ class ZipfsLawTests(unittest.TestCase):
         """
         Test using Hitchhiker Guide
         """
-        zipfs_law_analysis.zipfs_law_analysis('hitchhiker')
-
-        log = logging.getLogger("ZipfsLawTests.test_zipfs_law_hitchhiker")
+        zipfs_law_analysis.zipfs_law_analysis('hitchhiker', "")
 
 
 if __name__ == '__main__':
-    logging.basicConfig(stream=sys.stderr)
-    logging.getLogger("SomeTest.testSomething").setLevel(logging.DEBUG)
     unittest.main()

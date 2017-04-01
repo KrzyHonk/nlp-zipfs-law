@@ -1,52 +1,31 @@
+import errno
 import html
+import json
+import multiprocessing as mp
+import os
+import queue
 import re
+import threading
 from typing import List
 
 import matplotlib.pyplot as plt
 import numpy
 import scipy.stats as stats
-import spacy
 from ebooklib import epub
-from spacy.tokens.doc import Doc
-import json
-import datetime
-import os
-import errno
 
 
-def zipfs_law_analysis(epub_title: str):
-    words_count, pairs_count, triplets_count = __get_word_pair_triple_count(epub_title)
+def zipfs_law_analysis(epub_title: str, directory: str = ""):
+    words_count, pairs_count, triplets_count = __get_word_pair_triple_count(epub_title, directory)
 
-    words_ranked_data = __get_words_count_rank(words_count)
-    pairs_ranked_data = __get_pairs_count_rank(pairs_count)
-    triplets_ranked_data = __get_triplets_count_rank(triplets_count)
-
-    words_data = zip(words_count, words_ranked_data)
-    words_most_common = __get_top_range(words_data)
-
-    pairs_data = zip(pairs_count, pairs_ranked_data)
-    pairs_most_common = __get_top_range(pairs_data)
-
-    triplets_data = zip(triplets_count, triplets_ranked_data)
-    triplets_most_common = __get_top_range(triplets_data)
-
-    # TODO Ranked data is not serializable to JSON. Find some solution
     json_output = {
         'name': epub_title,
         'words_count': words_count,
-        'words_most_common': words_most_common,
-        'words_most_common_number': 50,
         'pairs_count': pairs_count,
-        'pairs_most_common': pairs_most_common,
-        'pairs_most_common_number': 50,
         'triplets_count': triplets_count,
-        'triplets_most_common': triplets_most_common,
-        'triplets_most_common_number': 50,
     }
-    output_directory = "./output/" + epub_title + "/"
-    delta = datetime.datetime.utcnow() - datetime.datetime(1970, 1, 1)
-    timestamp = int(delta.total_seconds() * 1000)
-    output_filename = epub_title + str(timestamp)
+
+    output_directory = "./output/" + directory + epub_title + "/"
+    output_filename = epub_title
 
     try:
         os.makedirs(output_directory)
@@ -56,15 +35,12 @@ def zipfs_law_analysis(epub_title: str):
 
     with open(output_directory + output_filename, 'w') as file:
         json.dump(json_output, file)
-
-    __generate_plots(words_count, words_ranked_data, 1, title="Words frequency", xlabel="log(rank)", ylabel="log(count)")
-    __generate_plots(pairs_count, pairs_ranked_data, 2, title="Pairs frequency", xlabel="log(rank)", ylabel="log(count)")
-    __generate_plots(triplets_count, triplets_ranked_data, 3, title="Triplets frequency", xlabel="log(rank)", ylabel="log(count)")
-    plt.show()
+    print("Analysis of " + epub_title + " finished")
 
 
-def __get_word_pair_triple_count(epub_title: str):
-    book = epub.read_epub(epub_title + ".epub")
+def __get_word_pair_triple_count(epub_title: str, directory: str = ""):
+    regex = re.compile('[a-zA-z0-9\-\']+')
+    book = epub.read_epub(directory + epub_title + ".epub")
     words_list = []
     pairs_list = []
     triplets_list = []
@@ -78,17 +54,59 @@ def __get_word_pair_triple_count(epub_title: str):
         # Clean up anything else by escaping
         preprocessed_content = html.escape(no_tags).replace("\n", " ").strip()
         preprocessed_content = re.sub("\s\s+", " ", preprocessed_content)
-        # split = re.compile('^[a-zA-Z0-9\']+$').findall(preprocessed_content)
         if preprocessed_content:
-            # print("CONTENT: ", preprocessed_content)
-            nlp = spacy.load('en')
-            doc = nlp(preprocessed_content)
-            # [utils.to_nltk_tree(sentence.root).pretty_print() for sentence in doc.sents]
-            for word in doc:
-                if word.pos_ in ["ADJ", "VERB", "CONJ", "DET", "NUM", "ADV", "ADP", "NOUN", "PROPN", "PRON"]:
-                    words_list.append(word.text.lower())
-            pairs_list = pairs_list + __extract_word_pairs(doc)
-            triplets_list = triplets_list + __extract_word_triplets(doc)
+            tmp_word_list = regex.findall(preprocessed_content)
+            words_list.extend(tmp_word_list)
+
+            cores = mp.cpu_count()
+            words_number = len(tmp_word_list)
+            split_point = (int)(words_number / cores)
+
+            index = 0
+            split = split_point
+            threads = []
+            work_queue = queue.Queue()
+            for proc in range(1, cores + 1):
+                if proc == cores:
+                    split = words_number
+                    arg = tmp_word_list[index:split]
+                    thread = PairsThread(arg, work_queue)
+                    thread.start()
+                    threads.append(thread)
+                else:
+                    arg = tmp_word_list[index:split]
+                    thread = PairsThread(arg, work_queue)
+                    thread.start()
+                    threads.append(thread)
+                    index = split
+                    split += split_point
+
+            for t in threads:
+                t.join()
+            pairs_list.extend(work_queue.get())
+
+            index = 0
+            split = split_point
+            threads = []
+            work_queue = queue.Queue()
+            for proc in range(1, cores + 1):
+                if proc == cores:
+                    split = words_number
+                    arg = tmp_word_list[index:split]
+                    thread = TripletsThread(arg, work_queue)
+                    thread.start()
+                    threads.append(thread)
+                else:
+                    arg = tmp_word_list[index:split]
+                    thread = PairsThread(arg, work_queue)
+                    thread.start()
+                    threads.append(thread)
+                    index = split
+                    split += split_point
+
+            for t in threads:
+                t.join()
+            triplets_list.extend(work_queue.get())
 
     words_set = set(words_list)
     words_count = [(w, words_list.count(w)) for w in words_set]
@@ -100,39 +118,6 @@ def __get_word_pair_triple_count(epub_title: str):
     triplets_count = [(t, triplets_list.count(t)) for t in triplets_set]
 
     return words_count, pairs_count, triplets_count
-
-
-def __extract_word_pairs(doc: Doc) -> List:
-    first = None
-    second = None
-    output = []
-    for index, word in enumerate(doc):
-        if index == 0:
-            second = word.text
-        else:
-            first = second
-            second = word.text
-            output.append((first, second))
-    return output
-
-
-def __extract_word_triplets(doc: Doc) -> List:
-    first = None
-    second = None
-    third = None
-    output = []
-    for index, word in enumerate(doc):
-        if index == 0:
-            third = word.text
-        elif index == 1:
-            second = third
-            third = word.text
-        else:
-            first = second
-            second = third
-            third = word.text
-            output.append((first, second, third))
-    return output
 
 
 def __get_words_count_rank(words_count):
@@ -150,12 +135,13 @@ def __get_triplets_count_rank(triplets_count):
     return triplets_count_rank
 
 
-def __generate_plots(counts_data, ranks_data, number=1, title="", xlabel="", ylabel="", plot_type ='ro'):
+def __generate_plots(counts_data, ranks_data, number=1, title="", xlabel="", ylabel="", plot_type='ro'):
     numpy.corrcoef(ranks_data, [numpy.math.log(count) for (word, count) in counts_data])
     ranks_range = [len(ranks_data) - rank + 1 for rank in ranks_data]
 
     plt.figure(number)
-    plt.plot([numpy.math.log(rank) for rank in ranks_range], [numpy.math.log(count) for (word, count) in counts_data], plot_type)
+    plt.plot([numpy.math.log(rank) for rank in ranks_range], [numpy.math.log(count) for (word, count) in counts_data],
+             plot_type)
     plt.draw()
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
@@ -165,3 +151,46 @@ def __generate_plots(counts_data, ranks_data, number=1, title="", xlabel="", yla
 def __get_top_range(ranked_data, limit=50):
     sorted_data = sorted(ranked_data, reverse=True, key=lambda count: count[0][1])
     return sorted_data[0:limit]
+
+
+class PairsThread(threading.Thread):
+    def __init__(self, words_list: List, result: queue.Queue):
+        threading.Thread.__init__(self)
+        self.words_list = words_list
+        self.result = result
+
+    def run(self):
+        second = None
+        output = []
+        for index, word in enumerate(self.words_list):
+            if index == 0:
+                second = word
+            else:
+                first = second
+                second = word
+                output.append((first, second))
+        self.result.put(output)
+
+
+class TripletsThread(threading.Thread):
+    def __init__(self, words_list: List, result: queue.Queue):
+        threading.Thread.__init__(self)
+        self.words_list = words_list
+        self.result = result
+
+    def run(self):
+        second = None
+        third = None
+        output = []
+        for index, word in enumerate(self.words_list):
+            if index == 0:
+                third = word
+            elif index == 1:
+                second = third
+                third = word
+            else:
+                first = second
+                second = third
+                third = word
+                output.append((first, second, third))
+        self.result.put(output)
