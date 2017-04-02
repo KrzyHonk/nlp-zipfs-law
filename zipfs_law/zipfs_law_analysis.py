@@ -1,5 +1,4 @@
 import errno
-import html
 import json
 import multiprocessing as mp
 import os
@@ -11,21 +10,22 @@ from typing import List
 import matplotlib.pyplot as plt
 import numpy
 import scipy.stats as stats
-from ebooklib import epub
 
 
-def zipfs_law_analysis(epub_title: str, directory: str = ""):
-    words_count, pairs_count, triplets_count = __get_word_pair_triple_count(epub_title, directory)
+def zipfs_law_analysis(book_title: str, author: str = "", series=""):
+    words_count, pairs_count, triplets_count = __get_word_pair_triple_count(book_title, author, series)
 
     json_output = {
-        'name': epub_title,
+        'title': book_title,
+        'author': author,
+        'series': series,
         'words_count': words_count,
         'pairs_count': pairs_count,
         'triplets_count': triplets_count,
     }
 
-    output_directory = "./output/" + directory + epub_title + "/"
-    output_filename = epub_title + ".json"
+    output_directory = "./output/" + book_title + "/"
+    output_filename = book_title + ".json"
 
     try:
         os.makedirs(output_directory)
@@ -35,87 +35,79 @@ def zipfs_law_analysis(epub_title: str, directory: str = ""):
 
     with open(output_directory + output_filename, 'w') as file:
         json.dump(json_output, file)
-    print("Analysis of " + epub_title + " finished")
+    print("Analysis of " + book_title + " finished")
 
 
-def __get_word_pair_triple_count(epub_title: str, directory: str = ""):
+def __get_word_pair_triple_count(epub_title: str, author: str = "", series: str = ""):
     regex = re.compile('[a-zA-z0-9\-\'`]+')
-    book = epub.read_epub(directory + epub_title + ".epub")
+    content = None
+    with open(author + "/" + series + "/" + epub_title + ".txt", 'r') as file:
+        content = file.read()
     words_list = []
     pairs_list = []
     triplets_list = []
-    for document in book.get_items_of_type(9):
-        content = document.get_content().decode("utf-8").replace('"', ' ')
-        tag_re = re.compile(r'(<!--.*?-->|<[^>]*>)')
+    if content:
+        tmp_word_list = regex.findall(content.lower())
+        words_list.extend(tmp_word_list)
 
-        # Remove HTML tgs
-        # Remove well-formed tags, fixing mistakes by legitimate users
-        no_tags = tag_re.sub(' ', content)
-        # Clean up anything else by escaping
-        preprocessed_content = html.escape(no_tags).replace("\n", " ").strip()
-        preprocessed_content = re.sub("\s\s+", " ", preprocessed_content)
-        if preprocessed_content:
-            tmp_word_list = regex.findall(preprocessed_content)
-            words_list.extend(tmp_word_list)
+        cores = mp.cpu_count()
+        words_number = len(tmp_word_list)
+        split_point = (int)(words_number / cores)
 
-            cores = mp.cpu_count()
-            words_number = len(tmp_word_list)
-            split_point = (int)(words_number / cores)
+        index = 0
+        split = split_point
+        threads = []
+        work_queue = queue.Queue()
+        for proc in range(1, cores + 1):
+            if proc == cores:
+                split = words_number
+                arg = tmp_word_list[index:split]
+                thread = PairsThread(arg, work_queue)
+                thread.start()
+                threads.append(thread)
+            else:
+                arg = tmp_word_list[index:(split + 1)]
+                thread = PairsThread(arg, work_queue)
+                thread.start()
+                threads.append(thread)
+                index = split
+                split += split_point
 
-            index = 0
-            split = split_point
-            threads = []
-            work_queue = queue.Queue()
-            for proc in range(1, cores + 1):
-                if proc == cores:
-                    split = words_number
-                    arg = tmp_word_list[index:split]
-                    thread = PairsThread(arg, work_queue)
-                    thread.start()
-                    threads.append(thread)
-                else:
-                    arg = tmp_word_list[index:split]
-                    thread = PairsThread(arg, work_queue)
-                    thread.start()
-                    threads.append(thread)
-                    index = split
-                    split += split_point
+        for t in threads:
+            t.join()
+        pairs_list.extend(work_queue.get())
 
-            for t in threads:
-                t.join()
-            pairs_list.extend(work_queue.get())
-
-            index = 0
-            split = split_point
-            threads = []
-            work_queue = queue.Queue()
-            for proc in range(1, cores + 1):
-                if proc == cores:
-                    split = words_number
-                    arg = tmp_word_list[index:split]
-                    thread = TripletsThread(arg, work_queue)
-                    thread.start()
-                    threads.append(thread)
-                else:
-                    arg = tmp_word_list[index:split]
-                    thread = TripletsThread(arg, work_queue)
-                    thread.start()
-                    threads.append(thread)
-                    index = split
-                    split += split_point
+        index = 0
+        split = split_point
+        threads = []
+        work_queue = queue.Queue()
+        for proc in range(1, cores + 1):
+            if proc == cores:
+                split = words_number
+                arg = tmp_word_list[index:split]
+                thread = TripletsThread(arg, work_queue)
+                thread.start()
+                threads.append(thread)
+            else:
+                arg = tmp_word_list[index:(split + 2)]
+                thread = TripletsThread(arg, work_queue)
+                thread.start()
+                threads.append(thread)
+                index = split
+                split += split_point
 
             for t in threads:
                 t.join()
             triplets_list.extend(work_queue.get())
 
     words_set = set(words_list)
-    words_count = [(w, words_list.count(w)) for w in words_set]
+    words_count = [{"w": w, "c": words_list.count(w)} for w in words_set]
 
     pairs_set = set(pairs_list)
-    pairs_count = [(p, pairs_list.count(p)) for p in pairs_set]
+    pairs_count = [{"w": p, "c": pairs_list.count(p)} for p in pairs_set]
 
     triplets_set = set(triplets_list)
-    triplets_count = [(t, triplets_list.count(t)) for t in triplets_set]
+    triplets_count = [{"w": t, "c": triplets_list.count(t)} for t in triplets_set]
 
     return words_count, pairs_count, triplets_count
 
