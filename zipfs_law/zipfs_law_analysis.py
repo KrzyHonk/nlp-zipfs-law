@@ -24,7 +24,7 @@ def zipfs_law_analysis(book_title: str, author: str = "", series=""):
         'triplets_count': triplets_count,
     }
 
-    output_directory = "./output/" + book_title + "/"
+    output_directory = "./output/" + author + "/" + series + "/"
     output_filename = book_title + ".json"
 
     try:
@@ -38,10 +38,10 @@ def zipfs_law_analysis(book_title: str, author: str = "", series=""):
     print("Analysis of " + book_title + " finished")
 
 
-def __get_word_pair_triple_count(epub_title: str, author: str = "", series: str = ""):
+def __get_word_pair_triple_count(book_title: str, author: str = "", series: str = ""):
     regex = re.compile('[a-zA-z0-9\-\'`]+')
     content = None
-    with open(author + "/" + series + "/" + epub_title + ".txt", 'r') as file:
+    with open(author + "/" + series + "/" + book_title + ".txt", 'r', encoding="utf8") as file:
         content = file.read()
     words_list = []
     pairs_list = []
